@@ -1,0 +1,3 @@
+/home/morswin/Documents/Github/v-tutorial/build/CMakeFiles/app.dir
+/home/morswin/Documents/Github/v-tutorial/build/CMakeFiles/edit_cache.dir
+/home/morswin/Documents/Github/v-tutorial/build/CMakeFiles/rebuild_cache.dir
