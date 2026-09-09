@@ -1,1 +1,0 @@
-/nix/store/w88q44gqd1qg5wmkk7v0h97rpiqvam0l-gcc-wrapper-15.3.0/bin/g++ -Wl,--dependency-file=CMakeFiles/app.dir/link.d CMakeFiles/app.dir/main.cpp.o -o app  /nix/store/lk4614327cn1h9z3m6cvnls95n13m1cj-vulkan-loader-1.4.357.0/lib/libvulkan.so /nix/store/963nnxpvzlv4bp16095axirbigrmp71w-glfw-3.4/lib/libglfw.so.3.4 /nix/store/f1w19ylqa310s89z6cq3pxs7kllmqwjk-glm-1.0.3/lib/libglm.a
