@@ -1,3 +1,6 @@
+#define VMA_IMPLEMENTATION
+#include <vk_mem_alloc.h>
+
 #include <array>
 #include <algorithm>
 #include <cstddef>
@@ -146,10 +149,11 @@ class HelloTriangleApplication {
             0, 1, 2,
             2, 3, 0
         };
+        VmaAllocator allocator = VK_NULL_HANDLE;
         VkBuffer vertexBuffer = VK_NULL_HANDLE;
-        VkDeviceMemory vertexBufferMemory = VK_NULL_HANDLE;
+        VmaAllocation vertexBufferAllocation = VK_NULL_HANDLE;
         VkBuffer indexBuffer = VK_NULL_HANDLE;
-        VkDeviceMemory indexBufferMemory = VK_NULL_HANDLE;
+        VmaAllocation indexBufferAllocation = VK_NULL_HANDLE;
 
         void initWindow() {
             glfwInit();
@@ -164,23 +168,23 @@ class HelloTriangleApplication {
             createSurface();
             pickPhysicalDevice();
             createLogicalDevice();
+            createAllocator();
             createSwapChain();
             createImageViews();
             createGraphicsPipeline();
             createCommandPool();
-            createCommandBuffer();
-            createSyncObjects();
-
+            
             createVertexBuffer();
             createIndexBuffer();
+
+            createCommandBuffer();
+            createSyncObjects();
         }
         
         void cleanup() {
-            vkDestroyBuffer(device, indexBuffer, nullptr);
-            vkFreeMemory(device, indexBufferMemory, nullptr);
-
-            vkDestroyBuffer(device, vertexBuffer, nullptr);
-            vkFreeMemory(device, vertexBufferMemory, nullptr);
+            vmaDestroyBuffer(allocator, vertexBuffer, vertexBufferAllocation);
+            vmaDestroyBuffer(allocator, indexBuffer, indexBufferAllocation);
+            vmaDestroyAllocator(allocator);
 
             for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
                 vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
@@ -930,43 +934,20 @@ class HelloTriangleApplication {
             vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
         }
 
-        uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
-            VkPhysicalDeviceMemoryProperties memProperties;
-            vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
-
-            for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
-                if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
-                    return i;
-                }
-            }
-
-            throw std::runtime_error("Nie udalo sie znalezc odpowiedniego typu pamieci GPU!");
-        }
-
-        void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory) {
+        void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VkBuffer& buffer, VmaAllocation& allocation) {
             VkBufferCreateInfo bufferInfo{};
             bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
             bufferInfo.size = size;
             bufferInfo.usage = usage;
             bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-            if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
-                throw std::runtime_error("Nie udalo sie utworzyc bufora!");
+            VmaAllocationCreateInfo allocInfo{};
+            allocInfo.usage = memoryUsage;
+            allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+
+            if (vmaCreateBuffer(allocator, &bufferInfo, &allocInfo, &buffer, &allocation, nullptr) != VK_SUCCESS) {
+                throw std::runtime_error("VMA: Nie udalo sie utworzyc bufora!");
             }
-
-            VkMemoryRequirements memRequirements;
-            vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
-
-            VkMemoryAllocateInfo allocInfo{};
-            allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-            allocInfo.allocationSize = memRequirements.size;
-            allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
-
-            if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
-                throw std::runtime_error("Nie udalo sie przydzielic pamieci dla bufora!");
-            }
-
-            vkBindBufferMemory(device, buffer, bufferMemory, 0);
         }
 
         void createVertexBuffer() {
@@ -975,15 +956,15 @@ class HelloTriangleApplication {
             createBuffer(
                 bufferSize, 
                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, 
-                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
+                VMA_MEMORY_USAGE_AUTO, 
                 vertexBuffer, 
-                vertexBufferMemory
+                vertexBufferAllocation
             );
 
             void* data;
-            vkMapMemory(device, vertexBufferMemory, 0, bufferSize, 0, &data);
+            vmaMapMemory(allocator, vertexBufferAllocation, &data);
             memcpy(data, vertices.data(), static_cast<size_t>(bufferSize));
-            vkUnmapMemory(device, vertexBufferMemory);
+            vmaUnmapMemory(allocator, vertexBufferAllocation);
         }
 
         void createIndexBuffer() {
@@ -992,15 +973,27 @@ class HelloTriangleApplication {
             createBuffer(
                 bufferSize, 
                 VK_BUFFER_USAGE_INDEX_BUFFER_BIT, 
-                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
+                VMA_MEMORY_USAGE_AUTO, 
                 indexBuffer, 
-                indexBufferMemory
+                indexBufferAllocation
             );
 
             void* data;
-            vkMapMemory(device, indexBufferMemory, 0, bufferSize, 0, &data);
+            vmaMapMemory(allocator, indexBufferAllocation, &data);
             memcpy(data, indices.data(), (size_t) bufferSize);
-            vkUnmapMemory(device, indexBufferMemory);
+            vmaUnmapMemory(allocator, indexBufferAllocation);
+        }
+
+        void createAllocator() {
+            VmaAllocatorCreateInfo allocatorCreateInfo{};
+            allocatorCreateInfo.vulkanApiVersion = VK_API_VERSION_1_3;
+            allocatorCreateInfo.physicalDevice = physicalDevice;
+            allocatorCreateInfo.device = device;
+            allocatorCreateInfo.instance = instance;
+
+            if (vmaCreateAllocator(&allocatorCreateInfo, &allocator) != VK_SUCCESS) {
+                throw std::runtime_error("Nie udalo sie utworzyc alokatora VMA!");
+            }
         }
 };
 

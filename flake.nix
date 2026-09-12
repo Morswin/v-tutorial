@@ -22,6 +22,7 @@
         vulkan-headers
         vulkan-loader
         vulkan-validation-layers
+        vulkan-memory-allocator
         glfw
         glm
       ];
