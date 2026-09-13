@@ -3,6 +3,7 @@
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/ext/vector_float2.hpp>
 #include <glm/ext/vector_float3.hpp>
+#include <glm/ext/vector_float4.hpp>
 #include <glm/trigonometric.hpp>
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
@@ -106,6 +107,9 @@ struct Transform2D {
 
 struct MeshPushConstants {
     glm::mat4 renderMatrix;
+    glm::vec4 color{1.0f, 1.0f, 1.0f, 1.0f}; // Kolor RGBA (0.0..1.0)
+    glm::vec4 rectParams{0.0f, 0.0f, 0.0f, 0.0f}; // [width, height, cornerRadius, borderWidth]
+    glm::vec4 borderColor{0.0f, 0.0f, 0.0f, 1.0f}; // Kolor ramki
 };
 
 static std::vector<char> readFile(const std::string& filename) {
@@ -715,7 +719,7 @@ class VulkanApplication {
             colorBlending.pAttachments = &colorBlendAttachment;
 
             VkPushConstantRange pushConstantRange{};
-            pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+            pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
             pushConstantRange.offset = 0;
             pushConstantRange.size = sizeof(MeshPushConstants);
 
@@ -843,12 +847,17 @@ class VulkanApplication {
             Transform2D panelTransform;
             panelTransform.position = {50.0f, 50.0f};
             panelTransform.size = {400.0f, 300.0f};
-            drawQuad(commandBuffer, panelTransform);
+            drawQuad(commandBuffer, panelTransform, glm::vec4(0.18f, 0.18f, 0.22f, 1.0f), 12.0f);
 
             Transform2D buttonTransform;
             buttonTransform.position = {80.0f, 80.0f};
             buttonTransform.size = {150.0f, 40.0f};
-            drawQuad(commandBuffer, buttonTransform);
+            drawQuad(commandBuffer, buttonTransform, 
+                    glm::vec4(0.2f, 0.5f, 0.9f, 1.0f),
+                    6.0f,
+                    2.0f,
+                    glm::vec4(0.4f, 0.7f, 1.0f, 1.0f)
+            );
 
             vkCmdEndRendering(commandBuffer);
 
@@ -1054,7 +1063,7 @@ class VulkanApplication {
             }
         }
 
-        void drawQuad(VkCommandBuffer commandBuffer, const Transform2D& transform) {
+        void drawQuad(VkCommandBuffer commandBuffer, const Transform2D& transform, glm::vec4 color, float cornerRadius=0.0f, float borderWidth=0.0f, glm::vec4 borderColor={0,0,0,1}) {
             glm::mat4 projection = glm::ortho(
                 0.0f, static_cast<float>(swapChainExtent.width),
                 static_cast<float>(swapChainExtent.height), 0.0f,
@@ -1063,11 +1072,14 @@ class VulkanApplication {
 
             MeshPushConstants pushConstants;
             pushConstants.renderMatrix = projection * transform.getMatrix();
+            pushConstants.color = color;
+            pushConstants.rectParams = glm::vec4(transform.size.x, transform.size.y, cornerRadius, borderWidth);
+            pushConstants.borderColor = borderColor;
 
             vkCmdPushConstants(
                 commandBuffer, 
                 pipelineLayout, 
-                VK_SHADER_STAGE_VERTEX_BIT, 
+                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 
                 0, 
                 sizeof(MeshPushConstants), 
                 &pushConstants
