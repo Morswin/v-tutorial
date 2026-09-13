@@ -1,3 +1,9 @@
+#include <glm/ext/matrix_clip_space.hpp>
+#include <glm/ext/matrix_float4x4.hpp>
+#include <glm/ext/matrix_transform.hpp>
+#include <glm/ext/vector_float2.hpp>
+#include <glm/ext/vector_float3.hpp>
+#include <glm/trigonometric.hpp>
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
 
@@ -20,6 +26,7 @@
 #include <vulkan/vk_platform.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
@@ -82,6 +89,23 @@ struct QueueFamilyIndices {
     }
 };
 
+struct Transform2D {
+    glm::vec2 position{0.0f, 0.0f};
+    glm::vec2 scale{1.0f, 1.0f};
+    float rotation{0.0f};
+
+    glm::mat4 getMatrix() const {
+        glm::mat4 mat = glm::translate(glm::mat4(1.0f), glm::vec3(position, 0.0f));
+        mat = glm::rotate(mat, glm::radians(rotation), glm::vec3(0.0f, 0.0f, 1.0f));
+        mat = glm::scale(mat, glm::vec3(scale, 1.0f));
+        return mat;
+    }
+};
+
+struct MeshPushConstants {
+    glm::mat4 renderMatrix;
+};
+
 static std::vector<char> readFile(const std::string& filename) {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
@@ -140,10 +164,10 @@ class HelloTriangleApplication {
         uint32_t currentFrame = 0;
         std::vector<VkFence> imagesInFlight;
         const std::vector<Vertex> vertices = {
-            {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}}, // 0: Lewy-Góra (Czerwony)
-            {{ 0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}}, // 1: Prawy-Góra (Zielony)
-            {{ 0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}}, // 2: Prawy-Dół (Niebieski)
-            {{-0.5f,  0.5f}, {1.0f, 1.0f, 0.0f}}  // 3: Lewy-Dół (Żółty)
+            {{0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}}, // Lewy-Góra
+            {{1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}, // Prawy-Góra
+            {{1.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}, // Prawy-Dół
+            {{0.0f, 1.0f}, {1.0f, 1.0f, 0.0f}}  // Lewy-Dół
         };
         const std::vector<uint16_t> indices = {
             0, 1, 2,
@@ -684,8 +708,16 @@ class HelloTriangleApplication {
             colorBlending.attachmentCount = 1;
             colorBlending.pAttachments = &colorBlendAttachment;
 
+            VkPushConstantRange pushConstantRange{};
+            pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+            pushConstantRange.offset = 0;
+            pushConstantRange.size = sizeof(MeshPushConstants);
+
             VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
             pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+            pipelineLayoutInfo.setLayoutCount = 0;
+            pipelineLayoutInfo.pushConstantRangeCount = 1;
+            pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
             if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
                 throw std::runtime_error("Nie udalo sie utworzyc Pipeline Layout!");
@@ -765,10 +797,10 @@ class HelloTriangleApplication {
 
             VkViewport viewport{};
             viewport.x = 0.0f;
-            viewport.y = 0.0f;
+            viewport.y = static_cast<float>(swapChainExtent.height);
             viewport.width = static_cast<float>(swapChainExtent.width);
-            viewport.height = static_cast<float>(swapChainExtent.height);
-            viewport.maxDepth = 0.0f;
+            viewport.height = -static_cast<float>(swapChainExtent.height);
+            viewport.minDepth = 0.0f;
             viewport.maxDepth = 1.0f;
             vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 
@@ -800,8 +832,29 @@ class HelloTriangleApplication {
             VkBuffer buffers[] = { vertexBuffer };
             VkDeviceSize offsets[] = { 0 };
             vkCmdBindVertexBuffers(commandBuffer, 0, 1, buffers, offsets);
-
             vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+
+            glm::mat4 projection = glm::ortho(0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, -1.0f, 1.0f);
+            
+            float posX = 100.0f;
+            float posY = 150.0f;
+            float width = 300.0f;
+            float height = 80.0f;
+
+            glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(posX, posY, 0.0f));
+            model = glm::scale(model, glm::vec3(width, height, 1.0f));
+
+            MeshPushConstants pushConstants;
+            pushConstants.renderMatrix = projection * model;
+
+            vkCmdPushConstants(
+                commandBuffer, 
+                pipelineLayout, 
+                VK_SHADER_STAGE_VERTEX_BIT, 
+                0, 
+                sizeof(MeshPushConstants), 
+                &pushConstants
+            );
 
             // vkCmdDraw(commandBuffer, 3, 1, 0, 0);
             vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
