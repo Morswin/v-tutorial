@@ -91,13 +91,15 @@ struct QueueFamilyIndices {
 
 struct Transform2D {
     glm::vec2 position{0.0f, 0.0f};
-    glm::vec2 scale{1.0f, 1.0f};
+    glm::vec2 size{1.0f, 1.0f};
     float rotation{0.0f};
 
     glm::mat4 getMatrix() const {
         glm::mat4 mat = glm::translate(glm::mat4(1.0f), glm::vec3(position, 0.0f));
+        mat = glm::translate(mat, glm::vec3(0.5f * size.x, 0.5f * size.y, 0.0f));
         mat = glm::rotate(mat, glm::radians(rotation), glm::vec3(0.0f, 0.0f, 1.0f));
-        mat = glm::scale(mat, glm::vec3(scale, 1.0f));
+        mat = glm::translate(mat, glm::vec3(-0.5f * size.x, -0.5f * size.y, 0.0f));
+        mat = glm::scale(mat, glm::vec3(size, 1.0f));
         return mat;
     }
 };
@@ -834,30 +836,15 @@ class HelloTriangleApplication {
             vkCmdBindVertexBuffers(commandBuffer, 0, 1, buffers, offsets);
             vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
 
-            glm::mat4 projection = glm::ortho(0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, -1.0f, 1.0f);
-            
-            float posX = 100.0f;
-            float posY = 150.0f;
-            float width = 300.0f;
-            float height = 80.0f;
+            Transform2D panelTransform;
+            panelTransform.position = {50.0f, 50.0f};
+            panelTransform.size = {400.0f, 300.0f};
+            drawQuad(commandBuffer, panelTransform);
 
-            glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(posX, posY, 0.0f));
-            model = glm::scale(model, glm::vec3(width, height, 1.0f));
-
-            MeshPushConstants pushConstants;
-            pushConstants.renderMatrix = projection * model;
-
-            vkCmdPushConstants(
-                commandBuffer, 
-                pipelineLayout, 
-                VK_SHADER_STAGE_VERTEX_BIT, 
-                0, 
-                sizeof(MeshPushConstants), 
-                &pushConstants
-            );
-
-            // vkCmdDraw(commandBuffer, 3, 1, 0, 0);
-            vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+            Transform2D buttonTransform;
+            buttonTransform.position = {80.0f, 80.0f};
+            buttonTransform.size = {150.0f, 40.0f};
+            drawQuad(commandBuffer, buttonTransform);
 
             vkCmdEndRendering(commandBuffer);
 
@@ -1048,6 +1035,28 @@ class HelloTriangleApplication {
                 throw std::runtime_error("Nie udalo sie utworzyc alokatora VMA!");
             }
         }
+
+        void drawQuad(VkCommandBuffer commandBuffer, const Transform2D& transform) {
+            glm::mat4 projection = glm::ortho(
+                0.0f, static_cast<float>(swapChainExtent.width),
+                static_cast<float>(swapChainExtent.height), 0.0f,
+                -1.0f, 1.0f
+            );
+
+            MeshPushConstants pushConstants;
+            pushConstants.renderMatrix = projection * transform.getMatrix();
+
+            vkCmdPushConstants(
+                commandBuffer, 
+                pipelineLayout, 
+                VK_SHADER_STAGE_VERTEX_BIT, 
+                0, 
+                sizeof(MeshPushConstants), 
+                &pushConstants
+            );
+
+            vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+        } 
 };
 
 int main() {
